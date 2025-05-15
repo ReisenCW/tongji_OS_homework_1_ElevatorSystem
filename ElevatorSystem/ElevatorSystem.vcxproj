@@ -113,6 +113,9 @@
   <ItemGroup>
     <QtMoc Include="ElevatorDisplayWindow.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Utilities.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
     <Import Project="$(QtMsBuild)\qt.targets" />
