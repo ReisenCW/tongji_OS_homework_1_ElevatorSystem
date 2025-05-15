@@ -10,12 +10,23 @@ SimulationMainWindow::SimulationMainWindow(ElevatorSystem* elevatorSystem, QWidg
 
 void SimulationMainWindow::Init(int elevator_count, int floor_count)
 {
+	// 初始化窗口
 	setWindowTitle("电梯模拟器 Elevator Simulator");
 	setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
 	CaculateWindowSize(elevator_count, floor_count);
 	this->setFixedSize(window_width, window_height);
 	move(1200, 300); // 设置窗口初始位置
+	// 初始化楼层按钮状态容器
+	floorButtonStates.resize(floor_count);
+	for (auto& state : floorButtonStates) {
+		state.upPressed = false;
+		state.downPressed = false;
+		state.upDirection = Direction::None;
+		state.downDirection = Direction::None;
+	}
+	// 初始化控件
 	InitWidget();
+	// 创建电梯窗口
 	CreateElevatorWinodws();
 }
 
@@ -84,22 +95,71 @@ void SimulationMainWindow::InitWidget()
 		buttonLayout->setContentsMargins(0, 0, 0, 0); // 移除边距
 		buttonLayout->setSpacing(3); // 按钮间距
 
-		// 上按钮
+		// 上按钮点击处理
 		QPushButton* up_button = new QPushButton("↑", buttonContainer);
+		up_button->setObjectName(QString("up_%1").arg(i)); // 设置唯一对象名
 		up_button->setFixedSize(30, 20);
-		up_button->setStyleSheet("background-color: lightgreen; border: 1px solid black; border-radius: 10px;");
-		buttonLayout->addWidget(up_button);
+		up_button->setStyleSheet(
+			"QPushButton {"
+			"   background-color: white;" // 默认白色
+			"   border: 1px solid #666;"
+			"   border-radius: 10px;"
+			"}"
+			"QPushButton:disabled { background-color: red; }" // 禁用时变红
+		);
 		connect(up_button, &QPushButton::clicked, this, [=]() {
-			ScheduleElevator(i, Direction::Up); // i 是当前楼层
-			});
-		// 下按钮
+			// 检查是否有电梯已经停靠在此楼层
+			if (HasElevatorStoppedAtFloor(i)) {
+				// 直接触发最近电梯的开门动作
+				for (auto& elevator : elevators) {
+					if (elevator->GetCurrentFloor() == i &&
+						elevator->GetState() == ElevatorState::Idle) {
+						elevator->HandleOpenDoor();
+						break;
+					}
+				}
+			}
+			else {
+				// 禁用按钮并调度电梯
+				up_button->setDisabled(true);
+				ScheduleElevator(i, Direction::Up);
+			}
+		});
+		buttonLayout->addWidget(up_button); // 上按钮添加到布局
+
+		// 下按钮点击处理
 		QPushButton* down_button = new QPushButton("↓", buttonContainer);
+		down_button->setObjectName(QString("down_%1").arg(i));
 		down_button->setFixedSize(30, 20);
-		down_button->setStyleSheet("background-color: lightcoral; border: 1px solid black; border-radius: 10px;");
-		buttonLayout->addWidget(down_button);
+		down_button->setStyleSheet(
+			"QPushButton {"
+			"   background-color: white;"
+			"   border: 1px solid #666;"
+			"   border-radius: 10px;"
+			"}"
+			"QPushButton:disabled { background-color: red; }"
+		);
 		connect(down_button, &QPushButton::clicked, this, [=]() {
-			ScheduleElevator(i, Direction::Down);
-			});
+			// 检查是否有电梯已经停靠在此楼层
+			if (HasElevatorStoppedAtFloor(i)) {
+				// 直接触发最近电梯的开门动作
+				for (auto& elevator : elevators) {
+					if (elevator->GetCurrentFloor() == i &&
+						elevator->GetState() == ElevatorState::Idle) {
+						elevator->HandleOpenDoor();
+						break;
+					}
+				}
+			}
+			else {
+				// 禁用按钮并调度电梯
+				down_button->setDisabled(true);
+				ScheduleElevator(i, Direction::Down);
+			}
+		});
+		
+		buttonLayout->addWidget(down_button); // 下按钮添加到布局
+		buttonContainer->setLayout(buttonLayout); // 设置按钮容器布局
 		// 将按钮容器添加到奇数行
 		floorLayout->addWidget(buttonContainer, row * 2 + 1, col);
 	}
@@ -129,6 +189,9 @@ void SimulationMainWindow::CreateElevatorWinodws()
 		elevator_floor_labels, // 传递电梯楼层标签
 		this
 	);
+	for (auto& elevator : elevators) {
+		connect(elevator, &Elevator::FloorArrived, this, &SimulationMainWindow::HandleFloorArrived);
+	}
 	connect(this, &SimulationMainWindow::windowClosed, elevatorWindow, &ElevatorDisplayWindow::HandleSimulationClosed);
 	elevatorWindow->show();
 }
@@ -173,37 +236,77 @@ void SimulationMainWindow::ScheduleElevator(int request_floor, Direction dir) {
 	int min_cost = INT_MAX;
 	Elevator* selected = nullptr;
 
+	// 优先检查是否有空闲电梯已在目标楼层
 	for (auto& elevator : elevators) {
-		// 计算总移动成本
-		int cost = 0;
-		int last_floor = elevator->GetCurrentFloor();
-		auto targets = elevator->GetTargetFloors(); // 获取目标队列副本
-
-		// 现有任务移动距离
-		while (!targets.empty()) {
-			int next = targets.front();
-			cost += abs(next - last_floor);
-			last_floor = next;
-			targets.pop();
-		}
-
-		// 加上从最后目标到请求楼层的距离
-		cost += abs(request_floor - last_floor);
-
-		// 选择成本最小的电梯
-		if (cost < min_cost) {
-			min_cost = cost;
+		if (elevator->GetCurrentFloor() == request_floor &&
+			elevator->GetState() == ElevatorState::Idle) {
 			selected = elevator;
+			qDebug() << "分配空闲电梯" << elevator->GetElevatorID() << "到达" << request_floor + 1 << "楼";
+			break;
+		}
+	}
+
+	if (!selected) {
+		for (auto& elevator : elevators) {
+			// 计算总移动成本
+			int cost = 0;
+			int last_floor = elevator->GetCurrentFloor();
+			auto targets = elevator->GetTargetFloors(); // 获取目标队列副本
+
+			// 现有任务移动距离
+			while (!targets.empty()) {
+				int next = targets.front();
+				cost += abs(next - last_floor);
+				last_floor = next;
+				targets.pop();
+			}
+
+			// 加上从最后目标到请求楼层的距离
+			cost += abs(request_floor - last_floor);
+
+			// 选择成本最小的电梯
+			if (cost < min_cost) {
+				min_cost = cost;
+				selected = elevator;
+				qDebug() << "选择电梯" << elevator->GetElevatorID() << "，移动成本为" << cost;
+			}
 		}
 	}
 
 	if (selected) {
-		if (selected->GetState() == ElevatorState::Idle) {
-			// 若电梯空闲，触发移动
-			selected->AddTargetFloor(request_floor);
-		}
+		selected->AddTargetFloor(request_floor);
 	}
 	else {
 		QMessageBox::warning(this, "警告", "无可用电梯");
 	}
+}
+
+void SimulationMainWindow::HandleFloorArrived(int floor, ElevatorState elevatorDirection)
+{
+	// 更新按钮状态
+	if (elevatorDirection == ElevatorState::Up || elevatorDirection == ElevatorState::Idle) {
+		floorButtonStates[floor].upPressed = false;
+		// 启用按钮
+		QPushButton* btn = findChild<QPushButton*>(QString("up_%1").arg(floor));
+		if (btn) {
+			btn->setDisabled(false); // 启用按钮
+		}
+	}
+	if (elevatorDirection == ElevatorState::Down || elevatorDirection == ElevatorState::Idle) {
+		floorButtonStates[floor].downPressed = false;
+		// 启用按钮
+		QPushButton* btn = findChild<QPushButton*>(QString("down_%1").arg(floor));
+		if (btn) {
+			btn->setDisabled(false); // 启用按钮
+		}
+	}
+}
+
+bool SimulationMainWindow::HasElevatorStoppedAtFloor(int floor)
+{
+	for (auto& elevator : elevators) {
+		if (elevator->GetCurrentFloor() == floor)
+			return true;
+	}
+	return false;
 }

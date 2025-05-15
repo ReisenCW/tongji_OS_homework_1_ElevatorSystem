@@ -22,10 +22,8 @@ void Elevator::InsertTargetFloor(int floor) {
     if (floor == current_floor) return;
 	// 如果queue中已经有该楼层请求，则不重复添加
 	if (RequestExists(floor)) {
-		qDebug() << "电梯" << elevator_id << "请求已存在，忽略";
 		return;
 	}
-    qDebug() << "电梯" << elevator_id << "请求前往" << floor + 1 << "楼";
     // 若队列为空或方向未定，直接插入
     if (target_floors.empty()) {
         target_floors.push(floor);
@@ -128,7 +126,6 @@ void Elevator::InitWidget() {
     for (int i = 0; i < floor_cnt; ++i) {
         QPushButton* btn = new QPushButton(QString::number(i + 1), mainContainer);
         btn->setFixedSize(40, 40);
-        qDebug() << "注册按钮：楼层" << i + 1 << "键值" << i << "指针" << btn;
         btn->setStyleSheet(
             "QPushButton {"
             "   border: 1px solid #666;"
@@ -148,7 +145,7 @@ void Elevator::InitWidget() {
             int target_floor = i + 1; // 假设按钮标签为1-based
             this->AddTargetFloor(target_floor - 1); // 若电梯空闲则启动
         });
-        floorButtons.insert(i+1, btn);
+        floorButtons.push_back(btn);
         btnGrid->addWidget(btn, i / BUTTONS_PER_ROW, i % BUTTONS_PER_ROW);
     }
     rightLayout->addLayout(btnGrid);
@@ -178,9 +175,9 @@ void Elevator::AddTargetFloor(int floor)
 {
     if (floor == current_floor) return;
     InsertTargetFloor(floor);
-    QPushButton* btn = floorButtons.value(floor + 1, nullptr);
-    if (btn) {
-        qDebug() << "DISABLED";
+    int button_index = floor;
+    if (button_index >= 0 && button_index < floorButtons.size()) {
+        QPushButton* btn = floorButtons[button_index];
         btn->setDisabled(true); // 禁用按钮
     }
     if (state == ElevatorState::Idle) {
@@ -215,7 +212,7 @@ QGroupBox* Elevator::CreateStatusGroup() {
     layout->setSpacing(5);
 
     const QList<QPair<QString, QString>> statusLabels = {
-        {"状态:", "         空闲"}, {"当前楼层:", "   0"}, {"门状态:", "      关闭"}
+        {"状态:", "           空闲"}, {"当前楼层:", "   0"}, {"门状态:", "       关闭"}
     };
 
     for (const auto& pair : statusLabels) {
@@ -260,9 +257,9 @@ void Elevator::HandleOpenDoor() {
     {
         state = ElevatorState::Opening;
         UpdateDisplay();
-        int arrived_floor = current_floor + 1;
-        QPushButton* btn = floorButtons.value(arrived_floor, nullptr);
-        if (btn) {
+        int arrived_floor = current_floor; // 直接使用current_floor作为索引
+        if (arrived_floor >= 0 && arrived_floor < floorButtons.size()) {
+            QPushButton* btn = floorButtons[arrived_floor];
             btn->setDisabled(false);
         }
         // 开门过程定时器
@@ -331,14 +328,31 @@ void Elevator::MoveToNextFloor()
     }
     // 更新开关门状态
     if (current_floor == next_floor) {
+        // 触发到达信号
+        ElevatorState next_direction = ElevatorState::Idle;
+        QString debug_str = "idle";
+		// 如果目标队列不为空, 根据下一个目标楼层决定方向
+		if (!target_floors.empty()) {
+			int next_target = target_floors.front();
+			if (next_target > current_floor) {
+				next_direction = ElevatorState::Up;
+				debug_str = "up";
+			}
+			else if (next_target < current_floor) {
+				next_direction = ElevatorState::Down;
+				debug_str = "down";
+			}
+		}
+		qDebug() << "next_direction:" << debug_str;
+        emit FloorArrived(current_floor, next_direction); 
 		// 到达目标楼层，清除目标队列
         target_floors.pop();
 		qDebug() << "电梯" << elevator_id << "到达" << current_floor + 1 << "楼";
         //ClearAllTimers(); // 清除残留定时器
-        QPushButton* btn = floorButtons.value(current_floor + 1, nullptr); // 当前楼层+1对应按钮
-        if (btn) {
-			qDebug() << "ENABLED";
-            btn->setDisabled(false); // 到达后启用按钮
+        int button_index = current_floor;
+        if (button_index >= 0 && button_index < floorButtons.size()) {
+            QPushButton* btn = floorButtons[button_index];
+            btn->setDisabled(false); // 启用按钮
         }
 
         state = ElevatorState::Opening;
@@ -413,7 +427,7 @@ void Elevator::UpdateDisplay()
         case ElevatorState::Open: state_str = "已开门"; break;
         case ElevatorState::Closing: state_str = "关门中"; break;
         }
-        stateLabel->setText(QString("状态:        %1").arg(state_str));
+        stateLabel->setText(QString("状态:          %1").arg(state_str));
         stateLabel->setStyleSheet(QString("color: %1; font-size: 20px;").arg(state_color));
     }
 	// 更新电梯所在楼层
@@ -449,7 +463,7 @@ void Elevator::UpdateDisplay()
         else if (state == ElevatorState::Opening) doorState = "开门中";
         else if (state == ElevatorState::Closing) doorState = "关门中";
 
-        doorLabel->setText(QString("门状态:      %1").arg(doorState));
+        doorLabel->setText(QString("门状态:       %1").arg(doorState));
         doorLabel->setStyleSheet(QString("color: %1; font-size: 20px;").arg(state_color));
     }
 

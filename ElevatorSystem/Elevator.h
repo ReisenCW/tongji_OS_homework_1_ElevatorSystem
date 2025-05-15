@@ -14,6 +14,7 @@
 #include <qlineedit.h>
 #include <qmessagebox.h>
 #include <qtimer.h>
+#include <vector>
 
 enum class ElevatorState {
 	Idle,
@@ -38,6 +39,7 @@ public:
 	int GetCurrentFloor() const { return current_floor; }
 	const std::queue<int>& GetTargetFloors() const { return target_floors; }
 	void InsertTargetFloor(int floor);
+	int GetElevatorID() const { return elevator_id; }
 private:
 	void InitParams(); // 初始化参数
 	void InitWidget(); // 初始化控件
@@ -46,7 +48,7 @@ private:
 	QPushButton* CreateDoorButton(const QString& text, const QString& color);
 	QGroupBox* CreateStatusGroup();
 	bool RequestExists(int floor);
-private slots:
+public slots:
 	void HandleOpenDoor();
 	void HandleCloseDoor();
 private:
@@ -58,7 +60,7 @@ private:
 	ElevatorState state; // 电梯状态
 	QLabel* elevator_floor; // 电梯所在楼层
 	bool is_door_open;
-	QMap<int, QPushButton*> floorButtons; // 新增：楼层号到按钮的映射
+	std::vector<QPushButton*> floorButtons;
 
 //定时器管理
 private:
@@ -66,4 +68,7 @@ private:
 	QTimer* m_stayOpenTimer = nullptr;
 	QTimer* m_closeTimer = nullptr;
 	void ClearAllTimers();
+
+signals:
+	void FloorArrived(int floor, ElevatorState direction);
 };
