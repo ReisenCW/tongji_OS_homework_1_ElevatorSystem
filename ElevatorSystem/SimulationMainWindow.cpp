@@ -99,11 +99,13 @@ void SimulationMainWindow::InitWidget()
 				"QPushButton:disabled { background-color: red; }"
 			);
 			connect(up_button, &QPushButton::clicked, this, [=]() {
-				up_button->setDisabled(true);
-				floorButtonStates[i].upPressed = true;
-				floorButtonStates[i].upDirection = Direction::Up;
-				AssignExternalRequests(i, Direction::Up);
-				});
+				if (!HasElevatorStoppedAtFloor(i)) {
+					up_button->setDisabled(true);
+                    floorButtonStates[i].upPressed = true;
+                    floorButtonStates[i].upDirection = Direction::Up;
+				}
+                AssignExternalRequests(i, Direction::Up);
+			});
 			buttonLayout->addWidget(up_button);
 		}
         
@@ -121,11 +123,13 @@ void SimulationMainWindow::InitWidget()
                 "QPushButton:disabled { background-color: red; }"
             );
             connect(down_button, &QPushButton::clicked, this, [=]() {
-                down_button->setDisabled(true);
-                floorButtonStates[i].downPressed = true;
-                floorButtonStates[i].downDirection = Direction::Down;
+                if (!HasElevatorStoppedAtFloor(i)) {
+                    down_button->setDisabled(true);
+                    floorButtonStates[i].downPressed = true;
+                    floorButtonStates[i].downDirection = Direction::Down;
+                }
                 AssignExternalRequests(i, Direction::Down);
-                });
+            });
             buttonLayout->addWidget(down_button);
         }
         
@@ -237,10 +241,6 @@ void SimulationMainWindow::AssignExternalRequests(int floor, Direction dir)
     }
     if (best)
         best->AddExternalRequest(floor, dir);
-
-	if (best && best->GetState() == ElevatorState::Idle) {
-        best->DecideNextAction();
-	}
 }
 
 void SimulationMainWindow::ScheduleElevator(int request_floor, Direction dir)

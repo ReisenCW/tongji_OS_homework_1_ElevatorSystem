@@ -156,6 +156,10 @@ void Elevator::AddInternalTarget(int floor)
 
 void Elevator::AddExternalRequest(int floor, Direction dir)
 {
+    if (floor == current_floor && state == ElevatorState::Idle) {
+        HandleOpenDoor();
+        return;
+    }
     if (dir == Direction::Up) {
         if (!external_up_requests.insert(floor).second) return;
     }
@@ -212,7 +216,7 @@ void Elevator::DecideNextAction()
         }
         // 处理外部上升请求和外部下降请求中高于当前楼层的楼层
         for (int f : external_up_requests) {
-            if (f > current_floor) up_min = std::min(up_min, f);
+            if (f >= current_floor) up_min = std::min(up_min, f);
         }
         // 处理外部下降请求中的上行目标
         for (int f : external_down_requests) {  
